@@ -1,12 +1,22 @@
 package com.example.mapdemo;
 
 import android.Manifest;
+import android.app.AlertDialog;
 import android.app.Dialog;
+import android.content.DialogInterface;
+import android.graphics.Bitmap;
+import android.graphics.drawable.Drawable;
 import android.location.Location;
 import android.os.Bundle;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.text.TextUtils;
 import android.util.Log;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.animation.BounceInterpolator;
+import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
@@ -27,9 +37,14 @@ import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.OnMapReadyCallback;
 import com.google.android.gms.maps.SupportMapFragment;
+import com.google.android.gms.maps.model.BitmapDescriptor;
+import com.google.android.gms.maps.model.BitmapDescriptorFactory;
 import com.google.android.gms.maps.model.LatLng;
+import com.google.android.gms.maps.model.Marker;
+import com.google.android.gms.maps.model.MarkerOptions;
 import com.google.android.gms.tasks.OnFailureListener;
 import com.google.android.gms.tasks.OnSuccessListener;
+import com.google.maps.android.ui.IconGenerator;
 
 import permissions.dispatcher.NeedsPermission;
 import permissions.dispatcher.RuntimePermissions;
@@ -37,7 +52,7 @@ import permissions.dispatcher.RuntimePermissions;
 import static com.google.android.gms.location.LocationServices.getFusedLocationProviderClient;
 
 @RuntimePermissions
-public class MapDemoActivity extends AppCompatActivity {
+public class MapDemoActivity extends AppCompatActivity implements GoogleMap.OnMapLongClickListener, GoogleMap.OnMarkerDragListener {
 
     private SupportMapFragment mapFragment;
     private GoogleMap map;
@@ -53,6 +68,8 @@ public class MapDemoActivity extends AppCompatActivity {
      * returned in Activity.onActivityResult
      */
     private final static int CONNECTION_FAILURE_RESOLUTION_REQUEST = 9000;
+
+    int image = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -75,6 +92,9 @@ public class MapDemoActivity extends AppCompatActivity {
                 @Override
                 public void onMapReady(GoogleMap map) {
                     loadMap(map);
+                    //Set map type
+                    //Could I make a button to swap through types like I did icons?
+                    map.setMapType(GoogleMap.MAP_TYPE_HYBRID);
                 }
             });
         } else {
@@ -85,14 +105,141 @@ public class MapDemoActivity extends AppCompatActivity {
 
     protected void loadMap(GoogleMap googleMap) {
         map = googleMap;
+        map.setInfoWindowAdapter(new CustomWindowAdapter(getLayoutInflater()));
+        //Create a button in appbar to swap through each map style?
+
         if (map != null) {
             // Map is ready
             Toast.makeText(this, "Map Fragment was loaded properly!", Toast.LENGTH_SHORT).show();
             MapDemoActivityPermissionsDispatcher.getMyLocationWithPermissionCheck(this);
             MapDemoActivityPermissionsDispatcher.startLocationUpdatesWithPermissionCheck(this);
+
+            //Implement longclick
+            map.setOnMapLongClickListener(this);
+            //Implement draglistener
+            map.setOnMarkerDragListener(this);
         } else {
             Toast.makeText(this, "Error - Map was null!!", Toast.LENGTH_SHORT).show();
         }
+    }
+
+    @Override
+    public void onMapLongClick(LatLng point) {
+        //Perform longclick action
+        Toast.makeText(this,
+                "Long press",
+                Toast.LENGTH_LONG).show();
+
+        //Create an AlertDialog
+        showAlertDialogForPoint(point);
+    }
+
+    //Override drag methods
+    @Override
+    public void onMarkerDragStart(Marker marker) {
+
+    }
+
+    @Override
+    public void onMarkerDrag(Marker marker) {
+    }
+
+    @Override
+    public void onMarkerDragEnd(Marker marker) {
+        // DO MOST WORK HERE
+    }
+
+    private void showAlertDialogForPoint(final LatLng point) {
+        //Inflate message xml
+        View messageView = LayoutInflater
+                .from(MapDemoActivity.this)
+                .inflate(R.layout.message_item, null);
+        //Create alert dialog builder
+        AlertDialog.Builder alertDialogBuilder =
+                new AlertDialog.Builder(this);
+        alertDialogBuilder.setView(messageView);
+
+        //Create alert dialog
+        final AlertDialog alertDialog = alertDialogBuilder.create();
+
+        //Configure dialog button
+        alertDialog.setButton(DialogInterface.BUTTON_POSITIVE,
+                "OK", new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialog, int which) {
+                //BitmapDescriptor defaultMarker =
+                        //BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN);
+
+                // Extract content from alert dialog
+                String title = ((EditText) alertDialog.findViewById(R.id.etTitle)).
+                        getText().toString();
+                String snippet = ((EditText) alertDialog.findViewById(R.id.etSnippet)).
+                        getText().toString();
+
+                //Create custom icon to replace defaultMarker
+                IconGenerator iconGenerator = new IconGenerator(MapDemoActivity.this);
+                //iconGenerator.setStyle(IconGenerator.STYLE_PURPLE);
+                iconGenerator.setStyle(IconGenerator.STYLE_GREEN);
+                Bitmap bitmap = iconGenerator.makeIcon(title);
+                BitmapDescriptor icon = BitmapDescriptorFactory.fromBitmap(bitmap);
+
+                // Creates and adds marker to the map
+                Marker marker = map.addMarker(new MarkerOptions()
+                        .position(point)
+                        .title(title)
+                        .snippet(snippet + "," + image)
+                        //.icon(defaultMarker));
+                        .icon(icon));
+
+                //Drop pin with animation (marker is pin,
+                // the provided method animates it)
+                dropPinEffect(marker);
+                //Allow marker to be dragged
+                marker.setDraggable(true);
+            }
+        });
+
+        // Configure dialog button (Cancel)
+        alertDialog.setButton(DialogInterface.BUTTON_NEGATIVE, "Cancel",
+                new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface dialog, int id) { dialog.cancel(); }
+                });
+
+        // Display the dialog
+        alertDialog.show();
+    }
+
+    //Drops a pin at a location
+    private void dropPinEffect(final Marker marker) {
+        // Handler allows us to repeat a code block after a specified delay
+        final android.os.Handler handler = new android.os.Handler();
+        final long start = SystemClock.uptimeMillis();
+        final long duration = 1500;
+
+        // Use the bounce interpolator
+        final android.view.animation.Interpolator interpolator =
+                new BounceInterpolator();
+
+        // Animate marker with a bounce updating its position every 15ms
+        handler.post(new Runnable() {
+            @Override
+            public void run() {
+                long elapsed = SystemClock.uptimeMillis() - start;
+                // Calculate t for bounce based on elapsed time
+                float t = Math.max(
+                        1 - interpolator.getInterpolation((float) elapsed
+                                / duration), 0);
+                // Set the anchor
+                marker.setAnchor(0.5f, 1.0f + 14 * t);
+
+                if (t > 0.0) {
+                    // Post this event again 15ms from now.
+                    handler.postDelayed(this, 15);
+                } else { // done elapsing, show window
+                    marker.showInfoWindow();
+                }
+            }
+        });
     }
 
     @Override
@@ -248,6 +395,22 @@ public class MapDemoActivity extends AppCompatActivity {
         @Override
         public Dialog onCreateDialog(Bundle savedInstanceState) {
             return mDialog;
+        }
+    }
+
+    public void onClick (View v) {
+        Log.e("Click", "clicked");
+        //v.setBackground(getDrawable(android.R.drawable.dialog_frame));
+        image += 1;
+        if (image == 0) {
+            v.setBackground(getDrawable(android.R.drawable.ic_menu_directions));
+        } else if (image == 1) {
+            v.setBackground(getDrawable(android.R.drawable.ic_menu_gallery));
+        } else if (image == 2) {
+            v.setBackground(getDrawable(android.R.drawable.ic_menu_help));
+        } else if (image == 3) {
+            image = 0;
+            v.setBackground(getDrawable(android.R.drawable.ic_menu_info_details));
         }
     }
 
